@@ -1,0 +1,58 @@
+1.
+SELECT 
+    dm.title,
+    COUNT(*) AS total_ratings,
+    AVG(r.rating_value) AS avg_rating
+FROM ratings r
+JOIN dim_movies dm ON r.dim_movies_moviesID = dm.moviesID
+GROUP BY dm.title
+HAVING COUNT(*) > 50       
+ORDER BY avg_rating DESC
+LIMIT 10;
+
+2.
+SELECT 
+    dg.name AS genre,
+    COUNT(*) AS total_ratings
+FROM ratings r
+JOIN dim_genre dg ON r.dim_genre_genreId = dg.genreId
+GROUP BY dg.name
+ORDER BY total_ratings DESC;
+
+3.
+SELECT
+    du.age_group,
+    COUNT(*) AS rating_count
+FROM ratings r
+JOIN dim_users du ON r.dim_users_UsersID = du.UsersID
+GROUP BY du.age_group
+ORDER BY rating_count DESC;
+
+4.
+SELECT
+    du.UsersID,
+    COUNT(*) AS number_of_ratings
+FROM fact_ratings fr
+JOIN dim_users du 
+  ON fr.user_key = du.UsersID
+GROUP BY du.UsersID
+ORDER BY number_of_ratings DESC
+LIMIT 10;
+
+5.
+SELECT
+    dm.release_decade,
+    COUNT(DISTINCT dm.moviesID) AS movie_count
+FROM fact_ratings fr
+JOIN dim_movies dm ON fr.movie_key = dm.moviesID
+WHERE dm.release_decade != 'UnknownDecade'
+GROUP BY dm.release_decade
+ORDER BY dm.release_decade;
+
+
+
+
+
+
+
+
