@@ -1,0 +1,238 @@
+CREATE DATABASE Leopard_MovieLens_DB;
+
+CREATE SCHEMA Leopard_MovieLens_DB.staging;
+
+USE SCHEMA Leopard_MovieLens_DB.staging;
+
+CREATE TABLE age_group_staging (
+    id INT PRIMARY KEY,
+    name VARCHAR(45)
+
+);
+
+CREATE TABLE occupations_staging (
+    id INT PRIMARY KEY,
+    name VARCHAR(255)
+);
+
+CREATE TABLE users_staging (
+    id INT PRIMARY KEY,
+    age INT,
+    gender CHAR(1),
+    zip_code VARCHAR(10),
+    occupation_id INT
+);
+
+CREATE TABLE movies_staging (
+    id INT PRIMARY KEY,          
+    title VARCHAR(255),
+    release_year CHAR(4)      
+ 
+);
+
+
+CREATE TABLE genres_staging (
+    id INT PRIMARY KEY,
+    name VARCHAR(255)
+);
+
+CREATE TABLE genres_movies_staging (
+    id INT PRIMARY KEY,
+    movie_id INT,
+    genre_id INT,
+    FOREIGN KEY (movie_id) REFERENCES movies_staging(id),
+    FOREIGN KEY (genre_id) REFERENCES genres_staging(id)
+);
+
+
+CREATE TABLE ratings_staging (
+    id INT PRIMARY KEY,          
+    user_id INT,
+    movie_id INT,
+    rating INT,                  
+    rated_at DATETIME,           
+    FOREIGN KEY (user_id) REFERENCES users_staging(id),
+    FOREIGN KEY (movie_id) REFERENCES movies_staging(id)
+);             
+             
+           
+CREATE TABLE tag_staging (
+    id INT PRIMARY KEY,
+    user_id INT,
+    movie_id INT,
+    tags VARCHAR(450),
+    created_at DATETIME,   
+    FOREIGN KEY (user_id) REFERENCES users_staging(id),
+    FOREIGN KEY (movie_id) REFERENCES movies_staging(id)
+);
+
+
+CREATE OR REPLACE STAGE my_stage;
+
+
+
+
+COPY INTO age_group_staging
+FROM @my_stage/age_group.csv
+FILE_FORMAT = (TYPE='CSV' FIELD_OPTIONALLY_ENCLOSED_BY='"' SKIP_HEADER=1);
+
+COPY INTO occupations_staging
+FROM @my_stage/occupations.csv
+FILE_FORMAT = (TYPE='CSV' FIELD_OPTIONALLY_ENCLOSED_BY='"' SKIP_HEADER=1);
+
+COPY INTO users_staging
+FROM @my_stage/users.csv
+FILE_FORMAT = (TYPE='CSV' FIELD_OPTIONALLY_ENCLOSED_BY='"' SKIP_HEADER=1);
+
+COPY INTO movies_staging
+FROM @my_stage/movies.csv
+FILE_FORMAT = (TYPE='CSV' FIELD_OPTIONALLY_ENCLOSED_BY='"' SKIP_HEADER=1);
+
+COPY INTO genres_staging
+FROM @my_stage/genres.csv
+FILE_FORMAT = (TYPE='CSV' FIELD_OPTIONALLY_ENCLOSED_BY='"' SKIP_HEADER=1);
+
+COPY INTO genres_movies_staging
+FROM @my_stage/genres_movies.csv
+FILE_FORMAT = (TYPE='CSV' FIELD_OPTIONALLY_ENCLOSED_BY='"' SKIP_HEADER=1);
+
+COPY INTO ratings_staging
+FROM @my_stage/ratings.csv
+FILE_FORMAT = (TYPE='CSV' FIELD_OPTIONALLY_ENCLOSED_BY='"' SKIP_HEADER=1);
+
+COPY INTO tag_staging
+FROM @my_stage/tag.csv
+FILE_FORMAT = (TYPE='CSV' FIELD_OPTIONALLY_ENCLOSED_BY='"' SKIP_HEADER=1);
+
+
+
+USE SCHEMA Leopard_MovieLens_DB.STAGING;
+
+
+CREATE OR REPLACE TABLE dim_users AS
+SELECT DISTINCT
+    u.id AS UsersID,
+    CASE 
+        WHEN u.age < 18 THEN 'Under 18'
+        WHEN u.age BETWEEN 18 AND 24 THEN '18-24'
+        WHEN u.age BETWEEN 25 AND 34 THEN '25-34'
+        WHEN u.age BETWEEN 35 AND 44 THEN '35-44'
+        WHEN u.age BETWEEN 45 AND 54 THEN '45-54'
+        WHEN u.age >= 55 THEN '55+'
+        ELSE 'Unknown'
+    END AS age_group,
+    CASE 
+        WHEN u.gender = 'M' THEN 'Male'
+        WHEN u.gender = 'F' THEN 'Female'
+        ELSE 'Other'
+    END AS gender_label,
+    o.name AS occupation,
+    u.zip_code
+FROM Leopard_MovieLens_DB.staging.users_staging u
+LEFT JOIN Leopard_MovieLens_DB.staging.occupations_staging o 
+       ON u.occupation_id = o.id;
+
+
+
+
+CREATE OR REPLACE TABLE dim_movies AS
+SELECT DISTINCT
+    m.id AS moviesID,
+    m.title,
+    m.release_year,
+    CASE
+      WHEN TRY_TO_NUMBER(m.release_year) BETWEEN 1900 AND 1909 THEN '1900s'
+      WHEN TRY_TO_NUMBER(m.release_year) BETWEEN 1910 AND 1919 THEN '1910s'
+      WHEN TRY_TO_NUMBER(m.release_year) BETWEEN 1920 AND 1929 THEN '1920s'
+      WHEN TRY_TO_NUMBER(m.release_year) BETWEEN 1930 AND 1939 THEN '1930s'
+      WHEN TRY_TO_NUMBER(m.release_year) BETWEEN 1940 AND 1949 THEN '1940s'
+      WHEN TRY_TO_NUMBER(m.release_year) BETWEEN 1950 AND 1959 THEN '1950s'
+      WHEN TRY_TO_NUMBER(m.release_year) BETWEEN 1960 AND 1969 THEN '1960s'
+      WHEN TRY_TO_NUMBER(m.release_year) BETWEEN 1970 AND 1979 THEN '1970s'
+      WHEN TRY_TO_NUMBER(m.release_year) BETWEEN 1980 AND 1989 THEN '1980s'
+      WHEN TRY_TO_NUMBER(m.release_year) BETWEEN 1990 AND 1999 THEN '1990s'
+      WHEN TRY_TO_NUMBER(m.release_year) BETWEEN 2000 AND 2009 THEN '2000s'
+      WHEN TRY_TO_NUMBER(m.release_year) BETWEEN 2010 AND 2019 THEN '2010s'
+      WHEN TRY_TO_NUMBER(m.release_year) BETWEEN 2020 AND 2029 THEN '2020s'
+      ELSE 'UnknownDecade'
+    END AS release_decade
+FROM movies_staging m;
+
+
+
+
+
+
+CREATE OR REPLACE TABLE dim_genre AS
+SELECT DISTINCT
+    g.id AS genreId,   
+    g.name
+FROM genres_staging g;
+
+
+
+
+
+CREATE OR REPLACE TABLE dim_date AS
+SELECT
+    ROW_NUMBER() OVER (ORDER BY CAST(r.rated_at AS DATE)) AS dateId,
+    CAST(r.rated_at AS DATE) AS date_value,
+    EXTRACT(DAY   FROM r.rated_at) AS day,
+    EXTRACT(MONTH FROM r.rated_at) AS month,
+    EXTRACT(YEAR  FROM r.rated_at)  AS year
+FROM ratings_staging r
+WHERE r.rated_at IS NOT NULL
+GROUP BY CAST(r.rated_at AS DATE),
+         EXTRACT(DAY   FROM r.rated_at),
+         EXTRACT(MONTH FROM r.rated_at),
+         EXTRACT(YEAR  FROM r.rated_at)
+ORDER BY date_value;
+
+
+
+
+
+CREATE OR REPLACE TABLE dim_tags AS
+SELECT DISTINCT
+    t.id AS TagsId, 
+    t.tags AS tag_text,
+    t.created_at
+FROM tag_staging t;
+
+
+
+
+
+
+CREATE OR REPLACE TABLE fact_ratings AS
+SELECT
+    r.id                AS rating_key,          
+    r.rating            AS rating_value,        
+    du.UsersID          AS user_key,            
+    dm.moviesID         AS movie_key,           
+    dg.genreId          AS genre_key,           
+    dd.dateId           AS date_key,            
+    CAST(r.rated_at AS DATE) AS rated_at,       
+    r.rated_at          AS rated_timestamp      
+FROM ratings_staging r
+   
+    JOIN dim_users du
+        ON r.user_id = du.UsersID
+
+    JOIN dim_movies dm
+        ON r.movie_id = dm.moviesID
+
+    LEFT JOIN genres_movies_staging gms
+        ON r.movie_id = gms.movie_id
+    LEFT JOIN dim_genre dg
+        ON gms.genre_id = dg.genreId
+    JOIN dim_date dd
+        ON dd.date_value = CAST(r.rated_at AS DATE);
+
+
+
+
+
+
+
+
